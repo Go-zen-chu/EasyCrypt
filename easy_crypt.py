@@ -26,21 +26,29 @@ class EasyCrypt:
 	ENCRYPTED_EXT = '.enc'
 	# password file that created for encrypting directory
 	MASTER_PASS_TXT = 'master_pass.txt'
+	HEADER_VERSION = 0.1
+
+	@staticmethod
+	def create_enc_header(master_pswd, version_dbl = HEADER_VERSION):
+		"""Create header which has json format."""
+		header_json_dict = {'master_password' : master_pswd, 'version' : version_dbl }
+		return json.dumps(header_json_dict)
+
+	@staticmethod
+	def read_enc_header(header_str):
+		"""Load json str and returns in python object."""
+		return json.loads(header_str)
 
 	@staticmethod
 	def rm_ext_from_path(abs_path):
-	"""
-	Remove extension from absolute path and return absolute path without extension.
-	"""
+		"""Remove extension from absolute path and return absolute path without extension."""
 		dirname, filename = os.path.split(abs_path)
 		basename, ext = os.path.splitext(filename)
 		return os.path.join(dirname, basename)
 
 	@staticmethod
 	def exec_command(cmd_str):
-	"""
-	Execute shell command, returns True if succeeded otherwise raise exception.
-	"""
+		"""Execute shell command, returns True if succeeded otherwise raise exception."""
 		try:
 			sps.check_output(cmd_str, shell=True)
 		except sps.CalledProcessError:
@@ -48,9 +56,7 @@ class EasyCrypt:
 
 	@staticmethod
 	def exec_command_get_result(cmd_str, attempt_failed_act=None):
-	"""
-	Execute shell command, returns stdout of result if succeeded otherwise return None or raise exception.
-	"""
+		"""Execute shell command, returns stdout of result if succeeded otherwise return None or raise exception."""
 		try:
 			proc = sps.Popen(cmd_str, shell=True, stderr=sps.PIPE, stdout=sps.PIPE) # these are for getting output strings
 			result_code = proc.wait()
@@ -98,13 +104,52 @@ class EasyCrypt:
 		If encrypted_file_path is None, new file is generated in same directory.
 		"""
 		if encrypted_file_path == None: encrypted_file_path = raw_file_path + ENCRYPTED_EXT
-		cmd = OPENSSL_CMD_WITH_OUTPUT.format("-e", raw_file_path, master_pswd, encrypted_file_path)
+		cmd = OPENSSL_CMD_WITH_OUTPUT.format('-e', raw_file_path, master_pswd, encrypted_file_path)
 		exec_command(cmd) # if error happens, this func will raise exception
 		return True
 
 	@staticmethod
-	def encrypt_dir():
+	def get_master_pswd_from_txt(master_pass_file_path):
+		"""
+		Check whether there is master pass file, and get master password if exists, create new if not.
+		"""
+		master_pswd = None
+		if os.path.exists(master_pass_file_path):
+			with open(master_pass_file_path, 'r') as mfile:
+				header_str = mfile.readline() # read json formatted header
+				header_json_dict = read_enc_header(header_str)
+				if 'master_password' not in header_json_dict:
+					print('master_password is not exists in {0}. \
+						If you want to create new password, delete {0} file and encrypt again.'
+						.format(MASTER_PASS_TXT))
+					return None
+				master_pswd = ['master_password'] # get master pass
+		else: 
+			# if there is no master password, make user to input new one
+			master_pswd = confirm_pswd_print()
+			with open(master_pass_file_path, 'w') as mfile:
+				mfile.write(create_enc_header(master_pswd))
+		return master_pswd
 
+	@staticmethod
+	def encrypt_dir(raw_dir_path, encrypted_dir_path=None):
+		"""
+		Encrypt directory by zip and encrypt using openssl command.
+		It returns True if succeeded, otherwise returns False.
+		"""
+		if os.path.exists(raw_dir_path) == False: return False
+		# has to be a directory
+		if os.path.isdir(raw_dir_path) == False: return False
+		master_pass_file_path = os.path.join(raw_dir_path, MASTER_PASS_TXT)
+		# check whether there is master pass file in working dir path and get master password.
+		master_pswd = get_master_pswd_from_txt(master_pass_file_path)
+		if master_pswd == None: return False
+		zu.zip_dir(raw_dir_path)
+		# remove final slash that is included in in_dir_path if exists.
+		if raw_dir_path.endswith(os.pathsep): raw_dir_path = raw_dir_path[0:-1]
+		zip_file_path = raw_dir_path + '.zip'
+		encrypt_file(zip_file_path, master_pswd, encrypted_dir_path)
+		return True
 
 	@staticmethod
 	def get_decrypted_txt(encrypted_file_path, attempt_failed_act=None):
@@ -117,46 +162,69 @@ class EasyCrypt:
 		# make user to input password until it gets correct password.
 		while True:
 			master_pswd = getpass.getpass('Input master password: ')
-			cmd = OPENSSL_CMD.format("-d", encrypted_file_path, master_pswd)
+			cmd = OPENSSL_CMD.format('-d', encrypted_file_path, master_pswd)
 			decrypted_txt = exec_command_get_result(cmd, attempt_failed_act)
 			if decrypted_txt != None: return decrypted_txt
 
 	@staticmethod
-	def decrypt_txt_file(encrypted_file_path, out_file_path=None, handle_decrpyted_txt_func=None):
+	def decrypt_txt_file(encrypted_file_path, dst_file_path=None, handle_decrpyted_txt_func=None, remove_enc_file=False):
 		"""
-		WARNING: This function should only be used for encrypted text file. It will return nothing if you used for other kinds of files.
+		WARNING:
+		This function should only be used for encrypted text file.
+		It will return nothing if you used for other kinds of files.
+		If you want to decrypt these files, use decrypt_file function.
+
 		Decrypt text file using openssl command.
-		Decrypted file is exported in same dir of encrypted_file_path, if out_file_path is not specified.
+		You can handle decrypted text file by putting handle_decrpyted_txt_func in the args.
+		Decrypted file is exported in same dir of encrypted_file_path, if dst_file_path is not specified.
 		Returns True if success and False if not.
 		"""
-		if os.path.exists(encrypted_file_path) == False: return False
-		if out_file_path == None: out_file_path = rm_ext_from_path(encrypted_file_path)
+		if dst_file_path == None: dst_file_path = rm_ext_from_path(encrypted_file_path)
+		# Existence of path is checked here.
 		decrypted_txt = get_decrypted_txt(encrypted_file_path, lambda: print('Failed to decrypt. May be miss typing?'))
 		# Failed to decrypt
 		if decrypted_txt == None: return False
 		if sys.flags.debug: print('Decryption Success!')
 		if handle_decrpyted_txt_func != None: decrypted_txt = handle_decrpyted_txt_func(decrypted_txt)
-		with open(out_file_path, 'w+') as raw_file:
+		with open(dst_file_path, 'w+') as raw_file:
 			raw_file.write(decrypted_txt)
+		if remove_enc_file: os.remove(encrypted_file_path)
 		return True
 
 	@staticmethod
-	def decrypt_file(encrypted_file_path, out_file_path=None, attempt_failed_act=None):
+	def decrypt_file(encrypted_file_path, dst_file_path=None, attempt_failed_act=None, remove_enc_file=False):
 		"""
 		Decrypt file using openssl command. It can be used for any types of file format.
-		Decrypted file is exported in same dir of encrypted_file_path, if out_file_path is not specified.
+		Decrypted file is exported in same dir of encrypted_file_path, if dst_file_path is not specified.
 		Returns True if success and False if not.
 		"""
 		if os.path.exists(encrypted_file_path) == False: return False
-		if out_file_path == None: out_file_path = rm_ext_from_path(encrypted_file_path)
+		if encrypted_file_path.endswith(ENCRYPTED_EXT) == False: return False # unsupported extension
+		if dst_file_path == None: dst_file_path = rm_ext_from_path(encrypted_file_path)
 		while True:
 			master_pswd = getpass.getpass('Input master password: ')
-			cmd = OPENSSL_CMD_WITH_OUTPUT.format("-d", encrypted_file_path, master_pswd, out_file_path)
-			if exec_command(cmd) == True: return True
+			cmd = OPENSSL_CMD_WITH_OUTPUT.format('-d', encrypted_file_path, master_pswd, dst_file_path)
+			if exec_command(cmd) == True:
+				if remove_enc_file: os.remove(encrypted_file_path)
+				return True
 
 	@staticmethod
-	def decrypt_dir():
-
+	def decrypt_dir(encrypted_dir_path, dst_dir_path=None, remove_enc_file=False, remove_zip=False):
+		"""
+		Decrypt .zip.enc file using openssl command.
+		Returns True if succeeded, else False.
+		"""
+		if os.path.isfile(encrypted_dir_path) == False: return False
+		tmp_zip_file_path = rm_ext_from_path(encrypted_dir_path)
+		if decrypt_file(encrypted_dir_path, tmp_zip_file_path) == False: return False
+		if dst_dir_path == None: dst_dir_path = rm_ext_from_path(tmp_zip_file_path)
+		# whether to succeed in unzipping to a directory
+		if zu.unzip_dir(tmp_zip_file_path, dst_dir_path):
+			if remove_enc_file: os.remove(encrypted_dir_path)
+			if remove_zip: os.remove(tmp_zip_file_path)
+			return True
+		else:
+			return False
 
 	@staticmethod
 	def gen_rnd_pswd(length=8, include_simbols=True):
@@ -176,42 +244,3 @@ class EasyCrypt:
 			print('File does not exists. Check the specified path.')
 			sys.exit(1)
 		return True
-
-if __name__ == '__main__':
-	parser = argparse.ArgumentParser(description='This is a python encrypter using AES-256-CBC algorithm of openssl.')
-	parser.add_argument('-dt', type=str, help='Decrypt .enc file to text file.')
-	parser.add_argument('-et', type=str, help='Encrypt specified text file to .enc file.')
-	parser.add_argument('-dd', type=str, help='Decrypt .enc directory file.')
-	parser.add_argument('-ed', type=str, help='Encrypt directory to .enc file.')
-	parser.add_argument('-g', action='store_true', help='Generate random password.')
-	args = parser.parse_args()
-	# if using debug mode in python
-	if sys.flags.debug: print(args)
-	pass_header = '# This line is auto-generated by easy_crypt.py . Master Password: '
-	
-	if args.g:
-		print(gen_rnd_pswd())
-	elif args.d != None:
-		path_exists_or_exit(args.d)
-		decrypt_txt_file(args.d)
-	elif args.e != None:
-		path_exists_or_exit(args.e)
-		with open(args.e, 'r') as raw_file:
-			raw_header = raw_file.readline()
-		if raw_header.startswith(pass_header):
-			# already master password is confirmed
-			# erace pass_header and whitespace then strip the password
-			master_pswd = raw_header.replace(pass_header, '').replace(' ', '').rstrip()
-		else:
-			# if there is no master password, make user to input new one
-			master_pswd = confirm_pswd_print()
-			with open(args.e, 'r') as raw_file:
-				raw_file_data = raw_file.readlines()
-			# add master password to the top of file 
-			raw_file_data.insert(0, pass_header + master_pswd + os.linesep)
-			with open(args.e, 'w') as raw_file:
-				raw_file.write(str.join('', raw_file_data))
-		encrypt_file(args.e, master_pswd)
-	else:
-		print('No arguments! Input -h or --help flag for help.')
-
