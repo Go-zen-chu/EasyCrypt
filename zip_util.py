@@ -2,96 +2,90 @@
 import os, sys, zipfile, shutil
 from unicodedata import normalize
 
-def utf8mac_to_sjis(mac_path_str):
-	u"""
-	A method for handling japanese "濁点" in mac.
-	If you didn't handle, it will raise an exception that you can't convert "濁点" to sjis.
-	"""
-	norm_path = normalize('NFC', unicode(mac_path_str,'utf8'))
-	return norm_path.encode('sjis')
-
-def sjis_to_utf8mac(sjis_path_str):
-	"""
-	Vice versa method of utf8mac_to_sjis.
-	"""
-	uni_path = unicode(sjis_path_str, 'sjis')
-	return uni_path.encode('utf8')
-
-def check_yes_no(message):
-	"""Method for requiring user to answer yes or no. True if yes, False if no."""
-	yes = set(['yes','y'])
-	no = set(['no','n'])
-	while True:
-		# raw_input returns the empty string for "enter"
-		choice = raw_input(message + os.linesep).lower()
-		if choice in yes:
-			return True
-		elif choice in no:
-			return False
+class ZipUtil:
+	"""Utility class to perform zip/unzip using python."""
+	
+	if os.name == 'nt': # for windows
+		import win32api, win32con
+	
+	@staticmethod
+	def is_hidden(path):
+		if os.name == 'nt': # for windows
+			attribute = win32api.GetFileAttributes(path)
+			return attribute & (win32con.FILE_ATTRIBUTE_HIDDEN | win32con.FILE_ATTRIBUTE_SYSTEM)
 		else:
-			print "Please respond with 'y(es)' or 'n(o)'"
+			dirname, filename = os.path.split(path)
+			return filename.startswith('.') #linux, mac
 
-def zip_dir_conv(src_dir_path, conv_func = lambda path_str: path_str):
-	''' 
-	This method is converting encode of file names and then zip.
-	conv_func is a method for converting encode of a file name.
-	'''
-	src_parent_path, in_dirname = os.path.split(src_dir_path)
-	os.chdir(src_parent_path)
-	with zipfile.ZipFile(in_dirname + '.zip', 'w') as zip_file:
-		for parent_path, dirs, files in os.walk(in_dirname):
-			conv_dir_path = conv_func(parent_path)
-			if os.path.exists(conv_dir_path) == False:
-				os.makedirs(conv_dir_path)
-			for fname in files:
-				if fname[0] == '.': continue # ignore all secret file
-				file_path = os.sep.join((parent_path, fname)) # path of original file
-				if sys.flags.debug: print 'zipping : {0}'.format(file_path)
-				conv_file_path = conv_func(file_path)
-				if file_path == conv_file_path:
-					zip_file.write(file_path) # file name is all alphabet
-				else:
-					shutil.copyfile(file_path, conv_file_path) # copy file in sjis file name
-					zip_file.write(conv_file_path)
-					os.remove(conv_file_path) # remove sjis format file
-			# remove parent folder in sjis format
-			os.removedirs(conv_dir_path)
+	@staticmethod
+	def utf8mac_to_sjis(mac_path_str):
+		"""
+		A method for handling japanese "濁点" of mac string and convert it to shift-jis.
+		If you didn't handle, it will raise an exception that you can't convert "濁点" to sjis.
+		"""
+		norm_path = normalize('NFC', unicode(mac_path_str,'utf8'))
+		return norm_path.encode('sjis')
 
-def zip_dir(src_dir_path):
-	"""Zip specified directory's path and return True if succeeded."""
-	if os.path.exists(src_dir_path) == False: return False
-	# remove final slash that is included in src_dir_path if exists.
-	if src_dir_path.endswith(os.pathsep): src_dir_path = src_dir_path[0:-1]
-	src_parent_path, in_dirname = os.path.split(src_dir_path)
-	os.chdir(src_parent_path) # change directory fot not creating zip file with full path files.
-	with zipfile.ZipFile(in_dirname + '.zip', 'w') as zip_file:
-		for parent_path, dirs, files in os.walk(in_dirname):
-			for fname in files:
-				file_path = os.sep.join((parent_path, fname)) # path of original file
-				if sys.flags.debug: print 'zipping : {0}'.format(file_path)
-				zip_file.write(file_path)
-	return True
+	@staticmethod
+	def sjis_to_utf8mac(sjis_path_str):
+		"""
+		Vice versa method of utf8mac_to_sjis.
+		"""
+		uni_path = unicode(sjis_path_str, 'sjis')
+		return uni_path.encode('utf8')
 
-def unzip_dir(zip_file_path, dst_dir_path):
-	"""Unzip (extract) specified zip_file_path to dst_dir_path. """
-	with zipfile.ZipFile(zip_file_path, 'r') as zip_file:
-		for member in zip_file.infolist(): # list all zipped files path
-			zip_file.extract(member, dst_dir_path)
-	return True
+	@staticmethod
+	def zip_dir_conv(src_dir_path, path_sanitize_func = lambda path_str: path_str, ignore_hidden_files = False):
+		""" 
+		This method is for converting an encode of files' name and zip them.
+		path_sanitize_func is a method for sanitizing (converting encode) a path (Do nothing for default).
+		"""
+		if os.path.exists(src_dir_path) == False: return False
+		# remove final slash that is included in src_dir_path if exists.
+		if src_dir_path.endswith(os.sep): src_dir_path = src_dir_path[0:-1]
+		src_parent_path, src_dirname = os.path.split(src_dir_path)
+		# IMPORTANT : change directory fot not creating zip file with full path files.
+		os.chdir(src_parent_path)
 
-if __name__ == '__main__':
-	if len(sys.argv) != 2:
-		sys.exit('Only 1 argument(path of directory) has to be specified as argument!')
-	zip_target_path = sys.argv[1]
-	if os.path.exists(zip_target_path) == False:
-		sys.exit('Directory {0} does not exists!'.format(zip_target_path))
-	if zip_target_path.endswith(os.sep):
-		zip_target_path = zip_target_path[0:-1] # remove seperator
-	zip_path = zip_target_path + '.zip'
-	if os.path.exists(zip_path):
-		if check_yes_no('Zip file already exists. Do you want to replace? [y/n]') == False:
-			print 'Bye'
-			sys.exit()
-	zip_dir_conv(zip_target_path, utf8mac_to_sjis) # give mac -> win conversion method
+		with zipfile.ZipFile(src_dirname + '.zip', 'w') as zip_file:
+			for parent_path, dirs, files in os.walk(src_dirname):
+				conv_dir_path = path_sanitize_func(parent_path)
+				if os.path.exists(conv_dir_path) == False:
+					os.makedirs(conv_dir_path)
+				for fname in files:
+					if ignore_hidden_files and ZipUtil.is_hidden(fname): continue
+					file_path = os.sep.join((parent_path, fname)) # path of original file
+					if sys.flags.debug: print 'zipping : {0}'.format(file_path)
+					conv_file_path = path_sanitize_func(file_path)
+					if file_path == conv_file_path:
+						# file name does not need to be sanitized
+						zip_file.write(file_path)
+					else:
+						shutil.copyfile(file_path, conv_file_path) # copy file in sjis file name
+						zip_file.write(conv_file_path)
+						os.remove(conv_file_path) # remove tmp file for sanitation
+				# path is converted if it is not same
+				if conv_dir_path != parent_path:
+					# remove temporary parent folder for sanitation
+					shutil.rmtree(conv_dir_path)
+		return True
 
+	@staticmethod
+	def zip_dir(src_dir_path, ignore_hidden_files = True):
+		"""Zip specified directory's path and return True if succeeded."""
+		return ZipUtil.zip_dir_conv(src_dir_path, ignore_hidden_files=ignore_hidden_files)
+
+	@staticmethod
+	def unzip_dir(zip_file_path, dst_dir_path = None):
+		"""Unzip (extract) specified zip_file_path to dst_dir_path. Returns True if succeeded."""
+		if os.path.exists(zip_file_path) == False: return False
+		if dst_dir_path != None and os.path.exists(dst_dir_path): return False
+		if dst_dir_path == None:
+			dirname, filename = os.path.split(zip_file_path)
+			dst_dir_path = dirname # extract in the same folder
+
+		with zipfile.ZipFile(zip_file_path, 'r') as zip_file:
+			for member in zip_file.infolist(): # list all zipped files path
+				zip_file.extract(member, dst_dir_path)
+		return True
 

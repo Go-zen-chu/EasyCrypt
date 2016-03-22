@@ -1,6 +1,6 @@
 # coding:utf-8
 from __future__ import print_function # using Python3 print for lambda, forward compatibility
-import os, sys, getpass, argparse, random, string, json
+import os, sys, getpass, random, string, json
 import subprocess as sps
 import zip_util as zu
 
@@ -29,15 +29,36 @@ class EasyCrypt:
 	HEADER_VERSION = 0.1
 
 	@staticmethod
-	def create_enc_header(master_pswd, version_dbl = HEADER_VERSION):
-		"""Create header which has json format."""
+	def create_header(master_pswd, version_dbl = HEADER_VERSION):
+		"""Create header which has json format as info storer of encryption."""
 		header_json_dict = {'master_password' : master_pswd, 'version' : version_dbl }
 		return json.dumps(header_json_dict)
 
 	@staticmethod
-	def read_enc_header(header_str):
-		"""Load json str and returns in python object."""
-		return json.loads(header_str)
+	def read_header(header_str):
+		"""Load json str and returns in python object. If it is not a valid json string, returns None."""
+		try:
+			json_dict = json.loads(header_str)
+		except ValueError, e:
+			return None
+		return json_dict
+
+	@staticmethod
+	def read_header_of_file(raw_file_path):
+		"""Read header of raw text file and returns in python object. If there is a problem, returns None."""
+		if os.path.exists(raw_file_path) == False: return None
+		with open(raw_file_path, 'r') as raw_file:
+			header_str = raw_file.readline()
+		return read_header(header_str)
+
+	@staticmethod
+	def read_master_pswd(raw_file_path):
+		"""Read header of text file and returns master password. If there is a problem, returns None."""
+		header_dict = read_header_of_file(raw_file_path)
+		if header_dict == None or 'master_password' not in header_dict:
+			return None
+		else:
+			return header_dict['master_password']
 
 	@staticmethod
 	def rm_ext_from_path(abs_path):
@@ -47,21 +68,28 @@ class EasyCrypt:
 		return os.path.join(dirname, basename)
 
 	@staticmethod
-	def exec_command(cmd_str):
-		"""Execute shell command, returns True if succeeded otherwise raise exception."""
+	def exec_command(cmd_str, failed_act=None):
+		"""Execute shell command, returns True if succeeded otherwise returns False."""
 		try:
-			sps.check_output(cmd_str, shell=True)
+			proc = sps.Popen(cmd_str, shell=True, stderr=sps.PIPE, stdout=sps.PIPE) # these are for getting output strings
+			result_code = proc.wait()
+			if result_code != 0:
+				if failed_act != None: failed_act()
+				if sys.flags.debug: print('[error]: ' + ''.join(proc.stderr))
+				return False
+			else:
+				return True
 		except sps.CalledProcessError:
-			raise
+			print('Failed Unexpectedly. Try again.')
 
 	@staticmethod
-	def exec_command_get_result(cmd_str, attempt_failed_act=None):
+	def exec_command_get_result(cmd_str, failed_act=None):
 		"""Execute shell command, returns stdout of result if succeeded otherwise return None or raise exception."""
 		try:
 			proc = sps.Popen(cmd_str, shell=True, stderr=sps.PIPE, stdout=sps.PIPE) # these are for getting output strings
 			result_code = proc.wait()
 			if result_code != 0:
-				if attempt_failed_act != None: attempt_failed_act()
+				if failed_act != None: failed_act()
 				if sys.flags.debug: print('[error]: ' + ''.join(proc.stderr))
 				return None
 			else:
@@ -103,6 +131,7 @@ class EasyCrypt:
 		Returns True if success, otherwise raises exception.
 		If encrypted_file_path is None, new file is generated in same directory.
 		"""
+		if os.path.exists(raw_file_path) == False: return False
 		if encrypted_file_path == None: encrypted_file_path = raw_file_path + ENCRYPTED_EXT
 		cmd = OPENSSL_CMD_WITH_OUTPUT.format('-e', raw_file_path, master_pswd, encrypted_file_path)
 		exec_command(cmd) # if error happens, this func will raise exception
@@ -115,9 +144,10 @@ class EasyCrypt:
 		"""
 		master_pswd = None
 		if os.path.exists(master_pass_file_path):
+
 			with open(master_pass_file_path, 'r') as mfile:
 				header_str = mfile.readline() # read json formatted header
-				header_json_dict = read_enc_header(header_str)
+				header_json_dict = read_header(header_str)
 				if 'master_password' not in header_json_dict:
 					print('master_password is not exists in {0}. \
 						If you want to create new password, delete {0} file and encrypt again.'
@@ -128,7 +158,7 @@ class EasyCrypt:
 			# if there is no master password, make user to input new one
 			master_pswd = confirm_pswd_print()
 			with open(master_pass_file_path, 'w') as mfile:
-				mfile.write(create_enc_header(master_pswd))
+				mfile.write(create_header(master_pswd))
 		return master_pswd
 
 	@staticmethod
@@ -146,13 +176,13 @@ class EasyCrypt:
 		if master_pswd == None: return False
 		zu.zip_dir(raw_dir_path)
 		# remove final slash that is included in in_dir_path if exists.
-		if raw_dir_path.endswith(os.pathsep): raw_dir_path = raw_dir_path[0:-1]
+		if raw_dir_path.endswith(os.sep): raw_dir_path = raw_dir_path[0:-1]
 		zip_file_path = raw_dir_path + '.zip'
 		encrypt_file(zip_file_path, master_pswd, encrypted_dir_path)
 		return True
 
 	@staticmethod
-	def get_decrypted_txt(encrypted_file_path, attempt_failed_act=None):
+	def get_decrypted_txt(encrypted_file_path, failed_act=None):
 		"""
 		Decrypt file using openssl command.
 		Returns decrypted text if success, else returns None.
@@ -163,48 +193,49 @@ class EasyCrypt:
 		while True:
 			master_pswd = getpass.getpass('Input master password: ')
 			cmd = OPENSSL_CMD.format('-d', encrypted_file_path, master_pswd)
-			decrypted_txt = exec_command_get_result(cmd, attempt_failed_act)
+			decrypted_txt = exec_command_get_result(cmd, failed_act)
 			if decrypted_txt != None: return decrypted_txt
 
 	@staticmethod
-	def decrypt_txt_file(encrypted_file_path, dst_file_path=None, handle_decrpyted_txt_func=None, remove_enc_file=False):
+	def decrypt_txt_file(encrypted_file_path, raw_file_path=None, handle_decrpyted_txt_func=None, remove_enc_file=False):
 		"""
 		WARNING:
 		This function should only be used for encrypted text file.
 		It will return nothing if you used for other kinds of files.
-		If you want to decrypt these files, use decrypt_file function.
+		If you want to decrypt other kinds of files, use "decrypt_file" function.
 
 		Decrypt text file using openssl command.
 		You can handle decrypted text file by putting handle_decrpyted_txt_func in the args.
-		Decrypted file is exported in same dir of encrypted_file_path, if dst_file_path is not specified.
+		Decrypted file is exported in same dir of encrypted_file_path, if raw_file_path is not specified.
 		Returns True if success and False if not.
 		"""
-		if dst_file_path == None: dst_file_path = rm_ext_from_path(encrypted_file_path)
+		if raw_file_path == None: raw_file_path = rm_ext_from_path(encrypted_file_path)
 		# Existence of path is checked here.
 		decrypted_txt = get_decrypted_txt(encrypted_file_path, lambda: print('Failed to decrypt. May be miss typing?'))
 		# Failed to decrypt
 		if decrypted_txt == None: return False
 		if sys.flags.debug: print('Decryption Success!')
+		# method for handling raw text files
 		if handle_decrpyted_txt_func != None: decrypted_txt = handle_decrpyted_txt_func(decrypted_txt)
-		with open(dst_file_path, 'w+') as raw_file:
+		with open(raw_file_path, 'w+') as raw_file:
 			raw_file.write(decrypted_txt)
 		if remove_enc_file: os.remove(encrypted_file_path)
 		return True
 
 	@staticmethod
-	def decrypt_file(encrypted_file_path, dst_file_path=None, attempt_failed_act=None, remove_enc_file=False):
+	def decrypt_file(encrypted_file_path, raw_file_path=None, failed_act=None, remove_enc_file=False):
 		"""
 		Decrypt file using openssl command. It can be used for any types of file format.
-		Decrypted file is exported in same dir of encrypted_file_path, if dst_file_path is not specified.
+		Decrypted file is exported in same dir of encrypted_file_path, if raw_file_path is not specified.
 		Returns True if success and False if not.
 		"""
 		if os.path.exists(encrypted_file_path) == False: return False
 		if encrypted_file_path.endswith(ENCRYPTED_EXT) == False: return False # unsupported extension
-		if dst_file_path == None: dst_file_path = rm_ext_from_path(encrypted_file_path)
+		if raw_file_path == None: raw_file_path = rm_ext_from_path(encrypted_file_path)
 		while True:
 			master_pswd = getpass.getpass('Input master password: ')
-			cmd = OPENSSL_CMD_WITH_OUTPUT.format('-d', encrypted_file_path, master_pswd, dst_file_path)
-			if exec_command(cmd) == True:
+			cmd = OPENSSL_CMD_WITH_OUTPUT.format('-d', encrypted_file_path, master_pswd, raw_file_path)
+			if exec_command(cmd, failed_act):
 				if remove_enc_file: os.remove(encrypted_file_path)
 				return True
 
