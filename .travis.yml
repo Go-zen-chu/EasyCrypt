@@ -1,0 +1,13 @@
+language: python
+python:
+  - "2.6"
+  - "2.7"
+  - "3.2"
+# command to install dependencies
+# install:
+#   - pip install .
+#   - pip install -r requirements.txt
+# command to run tests
+script:
+  - python test/test_easy_crypt.py
+  - python test/test_zip_util.py
