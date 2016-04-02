@@ -1,11 +1,13 @@
 # coding:utf-8
 import unittest, os, shutil, sys
+# to import script from other folder
+sys.path.append(os.path.dirname(os.path.abspath(__file__)) + '/../script')
 from zip_util import ZipUtil as zu
 
 class ZipUtilTest(unittest.TestCase):
 	"""Test class for ZipUtil"""
 
-	TEST_TMP_DIR_NAME = 'test_tmp'
+	TEST_TMP_DIR_NAME = 'test_tmp_zip_util'
 	ZIP_TEST_DIR_NAME = 'zip_test_dir'
 	UNZIP_TEST_DIR_NAME = 'unzip_test_dir'
 	TEST_FILE_NAME = 'test.txt'
@@ -61,10 +63,10 @@ class ZipUtilTest(unittest.TestCase):
 
 	# these methods are called everytime before and after test methods is called
 	def setUp(self):
-		if sys.flags.debug: print('setUp method is called.')
+		if sys.flags.debug: print('setUp : called.')
 
 	def tearDown(self):
-		if sys.flags.debug: print('tearDown method is called.')
+		if sys.flags.debug: print('tearDown : called.')
 
 
 	# ========================== test methods ==========================

@@ -1,2 +1,3 @@
-test_tmp/zip_test_dir
+test_tmp_zip_util
+test_tmp_easy_crypt
 *.pyc

@@ -22,6 +22,7 @@ class EasyCrypt:
 	# This script uses AES 256bit by default and encrypted files are exported in Base64 format.
 	OPENSSL_CMD = 'openssl aes-256-cbc {0} -base64 -in "{1}" -k "{2}"'
 	OPENSSL_CMD_WITH_OUTPUT = OPENSSL_CMD + ' -out "{3}"'
+	OPENSSL_CHECK_CMD = 'openssl -h'
 	# Extension for encrypted files. Change if any.
 	ENCRYPTED_EXT = '.enc'
 	# password file that created for encrypting directory
@@ -49,12 +50,12 @@ class EasyCrypt:
 		if os.path.exists(raw_file_path) == False: return None
 		with open(raw_file_path, 'r') as raw_file:
 			header_str = raw_file.readline()
-		return read_header(header_str)
+		return EasyCrypt.read_header(header_str)
 
 	@staticmethod
 	def read_master_pswd(raw_file_path):
 		"""Read header of text file and returns master password. If there is a problem, returns None."""
-		header_dict = read_header_of_file(raw_file_path)
+		header_dict = EasyCrypt.read_header_of_file(raw_file_path)
 		if header_dict == None or 'master_password' not in header_dict:
 			return None
 		else:
@@ -258,13 +259,17 @@ class EasyCrypt:
 			return False
 
 	@staticmethod
-	def gen_rnd_pswd(length=8, include_simbols=True):
+	def gen_rnd_pswd(length=8, include_simbols=True, rnd_seed=None):
 		"""Generate random password with specified length. Used for salting passwords."""
 		chars = string.ascii_letters + string.digits
-		if include_simbols: chars + '!@#$%^&*{}[]'
+		if include_simbols: chars += '!@#$%^&*{}[]'
 		# random.SystemRandom() uses os.urandom() for seed which is more reliable than normal random()
-		rnd = random.SystemRandom()
-		random_pass = ''.join(rnd.choice(chars) for i in range(length))
+		# rnd = random.SystemRandom()
+		# random_pass = ''.join(rnd.choice(chars) for i in range(length))
+		
+		# however, SystemRandom is not suitable for testing
+		random.seed(rnd_seed) # uses time for seed if None is specified
+		random_pass = ''.join(random.choice(chars) for i in range(length))
 		if sys.flags.debug: print(random_pass)
 		return random_pass
 
@@ -275,3 +280,9 @@ class EasyCrypt:
 			print('File does not exists. Check the specified path.')
 			sys.exit(1)
 		return True
+
+	@staticmethod
+	def check_openssl_availability():
+		"""Check openssl command availability in user's envrionments."""
+		return EasyCrypt.exec_command(EasyCrypt.OPENSSL_CHECK_CMD)
+
