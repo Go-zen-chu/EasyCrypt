@@ -55,7 +55,7 @@ class ZipUtil:
 				for fname in files:
 					if ignore_hidden_files and ZipUtil.is_hidden(fname): continue
 					file_path = os.sep.join((parent_path, fname)) # path of original file
-					if sys.flags.debug: print 'zipping : {0}'.format(file_path)
+					if sys.flags.debug: print('zipping : {0}'.format(file_path))
 					conv_file_path = path_sanitize_func(file_path)
 					if file_path == conv_file_path:
 						# file name does not need to be sanitized
