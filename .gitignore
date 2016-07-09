@@ -2,3 +2,4 @@ __pycache__
 test_tmp_zip_util
 test_tmp_easy_crypt
 *.pyc
+*.DS_STORE
