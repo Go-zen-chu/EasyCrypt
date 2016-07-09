@@ -79,7 +79,8 @@ class EasyCrypt:
         with open(raw_file_path, 'r') as rfile, open(raw_file_with_header_path, 'w') as hdfile:
             print(header_json_str, file=hdfile)
             for line in rfile:
-                print(line, file=hdfile)
+                # remove newline from read data
+                print(line.rstrip(), file=hdfile)
         return True
 
     @staticmethod
