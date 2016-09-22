@@ -1,9 +1,10 @@
-# coding:utf-8
-# for python3
+# !/usr/bin/python
+# -*- coding: utf-8 -*-
 import os, sys, getpass, random, string, json
 import subprocess as sps
 from zip_util import ZipUtil
 
+# for python3
 class EasyCrypt:
     """
     Python script for en/decrypting file using openssl command.
