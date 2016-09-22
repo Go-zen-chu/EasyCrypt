@@ -53,7 +53,8 @@ class EasyCrypt:
         Read header of raw text file and returns in python object.
         If there is any problem reading header, it returns None.
         """
-        if os.path.exists(raw_file_path) == False: return None
+        if os.path.exists(raw_file_path) == False:
+            return None
         with open(raw_file_path, 'r') as raw_file:
             header_str = raw_file.readline()
         return EasyCrypt.read_header(header_str)
@@ -76,9 +77,16 @@ class EasyCrypt:
         Append header to the top of a raw_file.
         """
         if os.path.exists(raw_file_path) == False: return False
+        header = EasyCrypt.read_header_of_file(raw_file_path)
+        # header already exists in raw_file
+        header_exists = (header != None)
         with open(raw_file_path, 'r') as rfile, open(raw_file_with_header_path, 'w') as hdfile:
             print(header_json_str, file=hdfile)
             for line in rfile:
+                # ignore first line
+                if header_exists:
+                    header_exists = False
+                    continue
                 # remove newline from read data
                 print(line.rstrip(), file=hdfile)
         return True
@@ -171,6 +179,7 @@ class EasyCrypt:
         Returns True if success, otherwise returns False.
         If encrypted_file_path is None, new file is generated in the same directory as raw_file_path.
         """
+        header = EasyCrypt.read_header_of_file(raw_file_path)
         header_json_str = EasyCrypt.create_header(master_pswd)
         tmp_raw_file_path = raw_file_path + '.tmp'
         # create tmp file that header info is appended

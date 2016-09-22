@@ -51,7 +51,8 @@ def easy_crypter():
         # read master password from header
         master_pswd = ec.read_master_pswd(raw_text_path)
         # if master password doesn't exists create new one
-        if master_pswd == None: master_pswd = ec.confirm_pswd_print()
+        if master_pswd == None:
+            master_pswd = ec.confirm_pswd_print()
         result = ec.encrypt_file_with_header(raw_text_path, master_pswd)
     elif args.dt != None:
         encrypted_text_path = args.dt
